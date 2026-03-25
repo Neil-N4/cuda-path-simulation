@@ -1,0 +1,30 @@
+name: CPU CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  cpu-ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Configure/build CPU-only
+        run: |
+          cmake -S . -B build -DBUILD_CUDA=OFF
+          cmake --build build -j
+
+      - name: CPU smoke run
+        run: |
+          ./build/mc_cpu --paths 200000 --steps 365 --payoff european --antithetic --control-variate
+
+      - name: Python script syntax
+        run: |
+          python3 -m py_compile scripts/*.py

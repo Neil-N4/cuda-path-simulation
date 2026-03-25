@@ -1,0 +1,12 @@
+{
+  "benchmark": {
+    "min_avg_speedup": 500.0,
+    "max_avg_gpu_ms": 80.0,
+    "max_price_abs_diff": 0.02
+  },
+  "convergence": {
+    "min_antithetic_reduction": 1.2,
+    "min_control_reduction": 2.0,
+    "min_combo_reduction": 3.5
+  }
+}

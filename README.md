@@ -35,8 +35,11 @@ C++20, CUDA, Python, CMake, Nsight Systems, Nsight Compute, Valgrind
 - `scripts/validate_parity.py`: parity + CI-overlap checks
 - `scripts/convergence_report.py`: convergence + CI-width reduction report
 - `scripts/stress_suite.py`: robustness scenarios
+- `scripts/perf_gate.py`: hard performance regression gate
 - `scripts/profile_nsight.sh`: Nsight Systems capture
 - `scripts/profile_ncu.sh`: Nsight Compute capture
+- `scripts/profile_ncu_csv.sh`: Nsight Compute CSV capture
+- `scripts/compare_ncu_csv.py`: before/after Nsight CSV comparison
 - `docs/NSIGHT_REPORT_TEMPLATE.md`: profiler report template
 
 ## Build
@@ -99,6 +102,17 @@ python3 scripts/validate_parity.py --build-dir build --paths 2000000 --steps 365
 python3 scripts/stress_suite.py --build-dir build
 ```
 
+## Performance Gate
+
+Run after benchmark + convergence artifacts are generated:
+
+```bash
+python3 scripts/perf_gate.py \
+  --benchmark-csv results/benchmark_results.csv \
+  --convergence-csv results/convergence/gpu_convergence.csv \
+  --thresholds configs/perf_gate_thresholds.json
+```
+
 ## Convergence Report
 
 Runs four estimators: baseline, antithetic, control, antithetic+control.
@@ -125,6 +139,8 @@ bash scripts/profile_nsight.sh build 10000000 365
 
 ```bash
 bash scripts/profile_ncu.sh build 10000000 365 european
+bash scripts/profile_ncu_csv.sh build results/ncu_metrics_after.csv 10000000 365
+python3 scripts/compare_ncu_csv.py --before results/ncu_metrics_before.csv --after results/ncu_metrics_after.csv
 ```
 
 Use `docs/NSIGHT_REPORT_TEMPLATE.md` to capture occupancy/memory/warp-stall evidence.
@@ -137,8 +153,15 @@ make benchmark-anti-cv
 make validate-cv
 make convergence-gpu
 make stress
+make perf-gate
 make nsight-compute
+make nsight-csv
 ```
+
+## CI
+
+- `.github/workflows/cpu_ci.yml`: CPU-only gate on push/PR.
+- `.github/workflows/gpu_perf_gate.yml`: manual GPU perf gate for self-hosted NVIDIA runners.
 
 ## Resume Evidence Workflow
 

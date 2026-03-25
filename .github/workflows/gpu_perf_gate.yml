@@ -1,0 +1,53 @@
+name: GPU Perf Gate
+
+on:
+  workflow_dispatch:
+
+jobs:
+  gpu-perf:
+    # Requires self-hosted NVIDIA runner with CUDA toolchain.
+    runs-on: [self-hosted, linux, x64, gpu, nvidia]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure/build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j
+
+      - name: Benchmark (antithetic + control variate)
+        run: |
+          python3 scripts/benchmark.py \
+            --build-dir build \
+            --paths 10000000 \
+            --steps 365 \
+            --runs 3 \
+            --payoff european \
+            --antithetic \
+            --control-variate
+
+      - name: Convergence report
+        run: |
+          python3 scripts/convergence_report.py \
+            --build-dir build \
+            --engine gpu \
+            --steps 365 \
+            --payoff european
+
+      - name: Perf regression gate
+        run: |
+          python3 scripts/perf_gate.py \
+            --benchmark-csv results/benchmark_results.csv \
+            --convergence-csv results/convergence/gpu_convergence.csv \
+            --thresholds configs/perf_gate_thresholds.json
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpu-perf-artifacts
+          path: |
+            results/benchmark_results.csv
+            results/runtime_comparison.png
+            results/convergence/gpu_convergence.csv
+            results/convergence/convergence_error.png
+            results/convergence/convergence_ci_width.png

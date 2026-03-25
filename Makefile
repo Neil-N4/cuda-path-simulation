@@ -1,11 +1,15 @@
 BUILD_DIR ?= build
 
-.PHONY: configure build run-cpu run-gpu run-gpu-cv benchmark benchmark-anti benchmark-cv benchmark-anti-cv plot validate validate-anti validate-cv convergence-gpu convergence-cpu stress nsight-compute clean
+.PHONY: configure build build-cpu run-cpu run-gpu run-gpu-cv benchmark benchmark-anti benchmark-cv benchmark-anti-cv plot validate validate-anti validate-cv convergence-gpu convergence-cpu stress perf-gate nsight-compute nsight-csv clean
 
 configure:
 	cmake -S . -B $(BUILD_DIR)
 
 build: configure
+	cmake --build $(BUILD_DIR) -j
+
+build-cpu:
+	cmake -S . -B $(BUILD_DIR) -DBUILD_CUDA=OFF
 	cmake --build $(BUILD_DIR) -j
 
 run-cpu: build
@@ -52,6 +56,12 @@ stress: build
 
 nsight-compute: build
 	bash scripts/profile_ncu.sh $(BUILD_DIR) 10000000 365 european
+
+nsight-csv: build
+	bash scripts/profile_ncu_csv.sh $(BUILD_DIR) results/ncu_metrics.csv 10000000 365
+
+perf-gate:
+	python3 scripts/perf_gate.py --benchmark-csv results/benchmark_results.csv --convergence-csv results/convergence/gpu_convergence.csv --thresholds configs/perf_gate_thresholds.json
 
 clean:
 	rm -rf $(BUILD_DIR) results/*.csv results/*.png results/*.qdrep results/*.nsys-rep results/*.ncu-rep results/convergence
