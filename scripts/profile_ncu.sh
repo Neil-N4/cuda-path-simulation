@@ -8,10 +8,10 @@ PAYOFF=${4:-european}
 
 mkdir -p results
 
-nsys profile \
-  --trace=cuda,nvtx,osrt \
-  --sample=none \
-  --output=results/nsight_gpu_profile \
+ncu \
+  --set full \
+  --target-processes all \
+  --export results/ncu_profile \
   "${BUILD_DIR}/mc_gpu" \
   --paths "${PATHS}" \
   --steps "${STEPS}" \
@@ -19,4 +19,4 @@ nsys profile \
   --antithetic \
   --control-variate
 
-echo "Nsight profile written to results/nsight_gpu_profile.qdrep"
+echo "NVIDIA Nsight Compute report written to results/ncu_profile.ncu-rep"

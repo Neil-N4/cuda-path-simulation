@@ -1,38 +1,43 @@
-# CUDA-Accelerated Path Simulation
+# CUDA-Accelerated Path Simulation Engine
 
-Monte Carlo path simulation engine for European call pricing with a native C++20 CPU baseline and a CUDA implementation tuned for throughput, statistical rigor, and quant-style validation.
+Quant-oriented Monte Carlo pricing engine with matched CPU/CUDA implementations, variance-reduction estimators, pathwise Greeks, convergence reporting, stress tests, and profiling hooks.
 
 ## Tech Stack
 
-C++20, CUDA, Python, Nsight Systems, CMake, Valgrind
+C++20, CUDA, Python, CMake, Nsight Systems, Nsight Compute, Valgrind
 
-## Highlights
+## Core Capabilities
 
-- Native C++/CUDA implementation with **on-device RNG (`curand`)**
-- GPU kernel uses vectorized RNG (`curand_normal4`) and **shared-memory reduction**
-- Multi-stream execution with **asynchronous device-to-host copies**
-- CPU baseline for parity and speedup benchmarking
-- Reproducible benchmark and plotting scripts
-- **Antithetic variates** support for variance reduction (`--antithetic`)
-- 95% confidence intervals and **Black-Scholes error tracking** in binary outputs
-- Convergence report generator (error + CI width vs trajectory count)
+- Native C++/CUDA pricing engine with on-device `curand` RNG
+- CUDA kernel with vectorized random draws (`curand_normal4`), shared-memory reductions, coalesced writes, and stream-overlapped async copies
+- Multiple payoff models:
+  - `european` call
+  - `asian` arithmetic-average call
+  - `upout` up-and-out barrier call
+- Variance-reduction estimators:
+  - antithetic variates (`--antithetic`)
+  - control variate using discounted terminal price (`--control-variate`)
+- Quant validation outputs:
+  - 95% confidence intervals (`ci95_*`)
+  - Black-Scholes price error (`abs_error_bs`) for European calls
+  - pathwise Greeks (`delta`, `vega`) + BS reference error
+- Engineering gates:
+  - CPU/GPU parity checks
+  - robustness stress suite
+  - convergence report across estimator variants
 
-## Model
+## Project Layout
 
-Simulates Geometric Brownian Motion paths:
-
-- `S(t + dt) = S(t) * exp((r - 0.5*sigma^2) * dt + sigma * sqrt(dt) * Z)`
-- Payoff: `max(S(T) - K, 0)`
-- Price: `exp(-rT) * E[payoff]`
-
-## Project Structure
-
-- `src/gpu_main.cu`: CUDA kernel + stream orchestration
-- `src/cpu_main.cpp`: CPU baseline engine
-- `include/`: common config and argument parsing
-- `scripts/benchmark.py`: CPU vs GPU benchmark
-- `scripts/validate_parity.py`: CPU/GPU price parity gate
-- `scripts/profile_nsight.sh`: Nsight Systems profiling command
+- `src/cpu_main.cpp`: CPU engine + pricing/Greeks estimators
+- `src/gpu_main.cu`: CUDA engine + stream orchestration
+- `include/`: config + CLI parsing
+- `scripts/benchmark.py`: benchmark harness (CPU vs GPU)
+- `scripts/validate_parity.py`: parity + CI-overlap checks
+- `scripts/convergence_report.py`: convergence + CI-width reduction report
+- `scripts/stress_suite.py`: robustness scenarios
+- `scripts/profile_nsight.sh`: Nsight Systems capture
+- `scripts/profile_ncu.sh`: Nsight Compute capture
+- `docs/NSIGHT_REPORT_TEMPLATE.md`: profiler report template
 
 ## Build
 
@@ -41,66 +46,104 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=86
 cmake --build build -j
 ```
 
-Adjust `CMAKE_CUDA_ARCHITECTURES` for your GPU.
+Set `CMAKE_CUDA_ARCHITECTURES` for your GPU (e.g. T4=`75`, RTX30=`86`, RTX40=`89`).
 
 ## Run
 
+### European call (baseline)
+
 ```bash
-./build/mc_cpu --paths 1000000 --steps 365
-./build/mc_gpu --paths 10000000 --steps 365
-./build/mc_gpu --paths 10000000 --steps 365 --antithetic
+./build/mc_gpu --paths 10000000 --steps 365 --payoff european
 ```
 
-Each binary emits:
+### Antithetic + control variate (recommended)
 
-- `price`, `ci95_low`, `ci95_high`
-- `bs_price`, `abs_error_bs`
-- `sample_count`, `trajectory_count`
-- `payoff_stddev`, `payoff_stderr`
+```bash
+./build/mc_gpu --paths 10000000 --steps 365 --payoff european --antithetic --control-variate
+```
+
+### Model variants
+
+```bash
+./build/mc_gpu --paths 10000000 --steps 365 --payoff asian --antithetic --control-variate
+./build/mc_gpu --paths 10000000 --steps 365 --payoff upout --barrier 120 --antithetic --control-variate
+```
+
+## Output Fields
+
+Both CPU and GPU binaries emit key-value metrics including:
+
+- estimator:
+  - `price`, `price_cv`, `cv_beta`
+  - `ci95_low`, `ci95_high`, `ci95_low_cv`, `ci95_high_cv`
+- quant reference (European):
+  - `bs_price`, `abs_error_bs`
+  - `delta`, `vega`, `bs_delta`, `bs_vega`
+  - `abs_error_delta_bs`, `abs_error_vega_bs`
+- runtime and sample counts:
+  - `runtime_ms`, `sample_count`, `trajectory_count`
 
 ## Benchmark
 
 ```bash
-python3 scripts/benchmark.py --build-dir build --paths 10000000 --steps 365 --runs 3
-python3 scripts/benchmark.py --build-dir build --paths 10000000 --steps 365 --runs 3 --antithetic
+python3 scripts/benchmark.py --build-dir build --paths 10000000 --steps 365 --runs 3 --payoff european
+python3 scripts/benchmark.py --build-dir build --paths 10000000 --steps 365 --runs 3 --payoff european --antithetic --control-variate
 python3 scripts/plot_benchmark.py --csv results/benchmark_results.csv --out results/runtime_comparison.png
 ```
 
-## Validation Gate
+## Validation Gates
 
 ```bash
-python3 scripts/validate_parity.py --build-dir build --paths 2000000 --steps 365 --price-tol 0.05
-python3 scripts/validate_parity.py --build-dir build --paths 2000000 --steps 365 --price-tol 0.05 --antithetic --require-ci-overlap
+python3 scripts/validate_parity.py --build-dir build --paths 2000000 --steps 365 --payoff european --price-tol 0.05
+python3 scripts/validate_parity.py --build-dir build --paths 2000000 --steps 365 --payoff european --antithetic --control-variate --price-tol 0.05 --require-ci-overlap
+python3 scripts/stress_suite.py --build-dir build
 ```
 
-## Convergence Report (Quant Validation)
+## Convergence Report
+
+Runs four estimators: baseline, antithetic, control, antithetic+control.
 
 ```bash
-python3 scripts/convergence_report.py --build-dir build --engine gpu --steps 365
-python3 scripts/convergence_report.py --build-dir build --engine cpu --steps 365
+python3 scripts/convergence_report.py --build-dir build --engine gpu --steps 365 --payoff european
 ```
 
-Outputs in `results/convergence/`:
+Artifacts:
 
-- `*_convergence.csv`
-- `convergence_error.png` (abs error vs Black-Scholes)
-- `convergence_ci_width.png` (95% CI width trend)
+- `results/convergence/gpu_convergence.csv`
+- `results/convergence/convergence_error.png`
+- `results/convergence/convergence_ci_width.png`
 
-## Nsight Systems Profiling
+## Profiling
+
+### Nsight Systems
 
 ```bash
 bash scripts/profile_nsight.sh build 10000000 365
 ```
 
-## Valgrind (CPU baseline)
+### Nsight Compute
 
 ```bash
-valgrind --leak-check=full ./build/mc_cpu --paths 500000 --steps 365
+bash scripts/profile_ncu.sh build 10000000 365 european
 ```
 
-## Resume-Ready Metrics Workflow
+Use `docs/NSIGHT_REPORT_TEMPLATE.md` to capture occupancy/memory/warp-stall evidence.
 
-1. Run `benchmark.py` with and without `--antithetic`
-2. Run `convergence_report.py` and capture CI-width reduction and error curves
-3. Use speedup + CI/error reductions in your bullets
-4. Attach `results/runtime_comparison.png` and convergence plots in portfolio
+## Make Targets
+
+```bash
+make build
+make benchmark-anti-cv
+make validate-cv
+make convergence-gpu
+make stress
+make nsight-compute
+```
+
+## Resume Evidence Workflow
+
+1. Run `benchmark.py` with/without antithetic/control
+2. Run `convergence_report.py` and capture CI-width reduction factors
+3. Run `validate_parity.py` + `stress_suite.py` for reliability proof
+4. Capture Nsight metrics and complete `docs/NSIGHT_REPORT_TEMPLATE.md`
+5. Attach generated plots/tables to portfolio

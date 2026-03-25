@@ -1,0 +1,14 @@
+{
+  "engine": "gpu",
+  "paths": 4000000,
+  "steps": 365,
+  "payoff": "upout",
+  "antithetic": true,
+  "control_variate": true,
+  "barrier": 120.0,
+  "s0": 100.0,
+  "strike": 100.0,
+  "rate": 0.03,
+  "vol": 0.55,
+  "maturity": 1.0
+}

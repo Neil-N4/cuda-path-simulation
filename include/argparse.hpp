@@ -6,12 +6,30 @@
 
 #include "sim_config.hpp"
 
+inline bool parse_payoff(const std::string& s, PayoffType& payoff) {
+  if (s == "european") {
+    payoff = PayoffType::EuropeanCall;
+    return true;
+  }
+  if (s == "asian") {
+    payoff = PayoffType::AsianCall;
+    return true;
+  }
+  if (s == "upout") {
+    payoff = PayoffType::UpAndOutCall;
+    return true;
+  }
+  return false;
+}
+
 inline void print_usage(const char* bin) {
   std::cerr
       << "Usage: " << bin
       << " [--paths N] [--steps N] [--s0 X] [--strike X] [--rate X]"
-      << " [--vol X] [--maturity X] [--seed N]"
-      << " [--antithetic|--no-antithetic]" << std::endl;
+      << " [--vol X] [--maturity X] [--barrier X] [--seed N]"
+      << " [--payoff european|asian|upout]"
+      << " [--antithetic|--no-antithetic]"
+      << " [--control-variate|--no-control-variate]" << std::endl;
 }
 
 inline bool parse_args(int argc, char** argv, SimConfig& cfg) {
@@ -23,6 +41,14 @@ inline bool parse_args(int argc, char** argv, SimConfig& cfg) {
     }
     if (arg == "--no-antithetic") {
       cfg.antithetic = false;
+      continue;
+    }
+    if (arg == "--control-variate") {
+      cfg.control_variate = true;
+      continue;
+    }
+    if (arg == "--no-control-variate") {
+      cfg.control_variate = false;
       continue;
     }
     if (i + 1 >= argc) {
@@ -38,7 +64,14 @@ inline bool parse_args(int argc, char** argv, SimConfig& cfg) {
       else if (arg == "--rate") cfg.rate = std::stof(value);
       else if (arg == "--vol") cfg.volatility = std::stof(value);
       else if (arg == "--maturity") cfg.maturity = std::stof(value);
+      else if (arg == "--barrier") cfg.barrier = std::stof(value);
       else if (arg == "--seed") cfg.seed = std::stoull(value);
+      else if (arg == "--payoff") {
+        if (!parse_payoff(value, cfg.payoff)) {
+          print_usage(argv[0]);
+          return false;
+        }
+      }
       else {
         print_usage(argv[0]);
         return false;
