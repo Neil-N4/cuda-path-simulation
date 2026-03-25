@@ -11,7 +11,7 @@ struct SimConfig {
   float volatility = 0.2f;
   float maturity = 1.0f;
   std::uint64_t seed = 42;
-  bool antithetic = true;
+  bool antithetic = false;
 };
 
 struct SimResult {
