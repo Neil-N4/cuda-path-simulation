@@ -306,7 +306,6 @@ SimResult run_gpu(const SimConfig& cfg) {
 
   const std::uint64_t total_samples = shape.sample_count;
   const std::uint64_t chunk_samples = (total_samples + kStreams - 1) / kStreams;
-  const bool greek_enabled = (cfg.payoff == PayoffType::EuropeanCall);
 
   std::vector<cudaStream_t> streams(kStreams);
   std::vector<StreamBuffers> buffers(kStreams);
