@@ -10,12 +10,21 @@ inline void print_usage(const char* bin) {
   std::cerr
       << "Usage: " << bin
       << " [--paths N] [--steps N] [--s0 X] [--strike X] [--rate X]"
-      << " [--vol X] [--maturity X] [--seed N]" << std::endl;
+      << " [--vol X] [--maturity X] [--seed N]"
+      << " [--antithetic|--no-antithetic]" << std::endl;
 }
 
 inline bool parse_args(int argc, char** argv, SimConfig& cfg) {
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
+    if (arg == "--antithetic") {
+      cfg.antithetic = true;
+      continue;
+    }
+    if (arg == "--no-antithetic") {
+      cfg.antithetic = false;
+      continue;
+    }
     if (i + 1 >= argc) {
       print_usage(argv[0]);
       return false;

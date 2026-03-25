@@ -25,9 +25,13 @@ def main() -> None:
     parser.add_argument("--paths", type=int, default=2_000_000)
     parser.add_argument("--steps", type=int, default=365)
     parser.add_argument("--price-tol", type=float, default=0.05)
+    parser.add_argument("--require-ci-overlap", action="store_true")
+    parser.add_argument("--antithetic", action="store_true")
     args = parser.parse_args()
 
     common = ["--paths", str(args.paths), "--steps", str(args.steps)]
+    if args.antithetic:
+        common.append("--antithetic")
 
     cpu = run(args.build_dir / "mc_cpu", common)
     gpu = run(args.build_dir / "mc_gpu", common)
@@ -40,6 +44,14 @@ def main() -> None:
 
     if diff > args.price_tol:
         raise SystemExit("Parity check failed")
+
+    if args.require_ci_overlap:
+        cpu_l, cpu_h = float(cpu["ci95_low"]), float(cpu["ci95_high"])
+        gpu_l, gpu_h = float(gpu["ci95_low"]), float(gpu["ci95_high"])
+        overlap = not (cpu_h < gpu_l or gpu_h < cpu_l)
+        print(f"ci_overlap={1 if overlap else 0}")
+        if not overlap:
+            raise SystemExit("CI overlap check failed")
 
     print("Parity check passed")
 

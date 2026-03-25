@@ -30,6 +30,11 @@ def main() -> None:
     parser.add_argument("--paths", type=int, default=10_000_000)
     parser.add_argument("--steps", type=int, default=365)
     parser.add_argument("--runs", type=int, default=3)
+    parser.add_argument(
+        "--antithetic",
+        action="store_true",
+        help="Enable antithetic variates in both CPU and GPU engines",
+    )
     parser.add_argument("--out", default=Path("results/benchmark_results.csv"), type=Path)
     args = parser.parse_args()
 
@@ -37,6 +42,8 @@ def main() -> None:
     gpu_bin = args.build_dir / "mc_gpu"
 
     common = ["--paths", str(args.paths), "--steps", str(args.steps)]
+    if args.antithetic:
+        common.append("--antithetic")
     rows: list[dict[str, float | str]] = []
 
     for i in range(args.runs):
@@ -53,7 +60,14 @@ def main() -> None:
           "speedup": speedup,
           "cpu_price": float(cpu["price"]),
           "gpu_price": float(gpu["price"]),
+          "cpu_ci95_low": float(cpu["ci95_low"]),
+          "cpu_ci95_high": float(cpu["ci95_high"]),
+          "gpu_ci95_low": float(gpu["ci95_low"]),
+          "gpu_ci95_high": float(gpu["ci95_high"]),
+          "cpu_abs_error_bs": float(cpu["abs_error_bs"]),
+          "gpu_abs_error_bs": float(gpu["abs_error_bs"]),
           "price_abs_diff": price_diff,
+          "antithetic": 1 if args.antithetic else 0,
       }
       rows.append(row)
       print(json.dumps(row, indent=2))

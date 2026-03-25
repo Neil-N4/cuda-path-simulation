@@ -1,6 +1,6 @@
 BUILD_DIR ?= build
 
-.PHONY: configure build run-cpu run-gpu benchmark plot validate clean
+.PHONY: configure build run-cpu run-gpu benchmark benchmark-anti plot validate validate-anti convergence-gpu convergence-cpu clean
 
 configure:
 	cmake -S . -B $(BUILD_DIR)
@@ -17,11 +17,23 @@ run-gpu: build
 benchmark: build
 	python3 scripts/benchmark.py --build-dir $(BUILD_DIR) --paths 10000000 --steps 365 --runs 3
 
+benchmark-anti: build
+	python3 scripts/benchmark.py --build-dir $(BUILD_DIR) --paths 10000000 --steps 365 --runs 3 --antithetic
+
 plot:
 	python3 scripts/plot_benchmark.py --csv results/benchmark_results.csv --out results/runtime_comparison.png
 
 validate: build
 	python3 scripts/validate_parity.py --build-dir $(BUILD_DIR) --paths 2000000 --steps 365 --price-tol 0.05
+
+validate-anti: build
+	python3 scripts/validate_parity.py --build-dir $(BUILD_DIR) --paths 2000000 --steps 365 --price-tol 0.05 --antithetic --require-ci-overlap
+
+convergence-gpu: build
+	python3 scripts/convergence_report.py --build-dir $(BUILD_DIR) --engine gpu --steps 365
+
+convergence-cpu: build
+	python3 scripts/convergence_report.py --build-dir $(BUILD_DIR) --engine cpu --steps 365
 
 clean:
 	rm -rf $(BUILD_DIR) results/*.csv results/*.png results/*.qdrep results/*.nsys-rep

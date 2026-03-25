@@ -1,6 +1,6 @@
 # CUDA-Accelerated Path Simulation
 
-Monte Carlo path simulation engine for European call pricing with a native C++20 CPU baseline and a CUDA implementation tuned for throughput.
+Monte Carlo path simulation engine for European call pricing with a native C++20 CPU baseline and a CUDA implementation tuned for throughput, statistical rigor, and quant-style validation.
 
 ## Tech Stack
 
@@ -13,6 +13,9 @@ C++20, CUDA, Python, Nsight Systems, CMake, Valgrind
 - Multi-stream execution with **asynchronous device-to-host copies**
 - CPU baseline for parity and speedup benchmarking
 - Reproducible benchmark and plotting scripts
+- **Antithetic variates** support for variance reduction (`--antithetic`)
+- 95% confidence intervals and **Black-Scholes error tracking** in binary outputs
+- Convergence report generator (error + CI width vs trajectory count)
 
 ## Model
 
@@ -45,12 +48,21 @@ Adjust `CMAKE_CUDA_ARCHITECTURES` for your GPU.
 ```bash
 ./build/mc_cpu --paths 1000000 --steps 365
 ./build/mc_gpu --paths 10000000 --steps 365
+./build/mc_gpu --paths 10000000 --steps 365 --antithetic
 ```
+
+Each binary emits:
+
+- `price`, `ci95_low`, `ci95_high`
+- `bs_price`, `abs_error_bs`
+- `sample_count`, `trajectory_count`
+- `payoff_stddev`, `payoff_stderr`
 
 ## Benchmark
 
 ```bash
 python3 scripts/benchmark.py --build-dir build --paths 10000000 --steps 365 --runs 3
+python3 scripts/benchmark.py --build-dir build --paths 10000000 --steps 365 --runs 3 --antithetic
 python3 scripts/plot_benchmark.py --csv results/benchmark_results.csv --out results/runtime_comparison.png
 ```
 
@@ -58,7 +70,21 @@ python3 scripts/plot_benchmark.py --csv results/benchmark_results.csv --out resu
 
 ```bash
 python3 scripts/validate_parity.py --build-dir build --paths 2000000 --steps 365 --price-tol 0.05
+python3 scripts/validate_parity.py --build-dir build --paths 2000000 --steps 365 --price-tol 0.05 --antithetic --require-ci-overlap
 ```
+
+## Convergence Report (Quant Validation)
+
+```bash
+python3 scripts/convergence_report.py --build-dir build --engine gpu --steps 365
+python3 scripts/convergence_report.py --build-dir build --engine cpu --steps 365
+```
+
+Outputs in `results/convergence/`:
+
+- `*_convergence.csv`
+- `convergence_error.png` (abs error vs Black-Scholes)
+- `convergence_ci_width.png` (95% CI width trend)
 
 ## Nsight Systems Profiling
 
@@ -74,8 +100,7 @@ valgrind --leak-check=full ./build/mc_cpu --paths 500000 --steps 365
 
 ## Resume-Ready Metrics Workflow
 
-1. Run `benchmark.py` to generate `results/benchmark_results.csv`
-2. Use average speedup from script output in your bullets
-3. Attach `results/runtime_comparison.png` in portfolio/project page
-4. Keep parity check output as correctness evidence
-
+1. Run `benchmark.py` with and without `--antithetic`
+2. Run `convergence_report.py` and capture CI-width reduction and error curves
+3. Use speedup + CI/error reductions in your bullets
+4. Attach `results/runtime_comparison.png` and convergence plots in portfolio
