@@ -27,6 +27,20 @@ C++20, CUDA, Python, CMake, Nsight Systems, Nsight Compute, Valgrind
   - stress suite (off-nominal scenarios)
   - performance regression gate with thresholds
 
+## Visual Results
+
+### Runtime (CPU vs GPU)
+
+![Runtime Comparison](docs/images/runtime_comparison.png)
+
+### Speedup Across Runs
+
+![Speedup by Run](docs/images/speedup_runs.png)
+
+### Variance-Reduction Impact
+
+![CI Reduction Factors](docs/images/ci_reduction_factors.png)
+
 ## Equations
 
 Risk-neutral GBM dynamics:
