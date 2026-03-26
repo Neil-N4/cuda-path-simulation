@@ -45,23 +45,23 @@ C++20, CUDA, Python, CMake, Nsight Systems, Nsight Compute, Valgrind
 
 Risk-neutral GBM dynamics:
 
-`S(t + dt) = S(t) * exp((r - 0.5 * sigma^2) * dt + sigma * sqrt(dt) * Z)`
+S<sub>t+Δt</sub> = S<sub>t</sub> · exp((r − ½σ<sup>2</sup>)Δt + σ√Δt · Z)
 
 European call payoff:
 
-`payoff = max(S(T) - K, 0)`
+payoff = max(S<sub>T</sub> − K, 0)
 
 Control variate estimator:
 
-`Y_cv = Y - beta * (X - E[X])`
+Y<sub>cv</sub> = Y − β(X − E[X])
 
-`beta = Cov(Y, X) / Var(X)`
+β = Cov(Y, X) / Var(X)
 
 Pathwise Greeks (European):
 
-`Delta = exp(-r * T) * 1{S(T) > K} * S(T) / S0`
+Δ = e<sup>−rT</sup> · 1{S<sub>T</sub> > K} · S<sub>T</sub>/S<sub>0</sub>
 
-`Vega = exp(-r * T) * 1{S(T) > K} * S(T) * (W(T) - sigma * T)`
+ν = e<sup>−rT</sup> · 1{S<sub>T</sub> > K} · S<sub>T</sub>(W<sub>T</sub> − σT)
 
 ## Quickstart
 
