@@ -45,21 +45,21 @@ C++20, CUDA, Python, CMake, Nsight Systems, Nsight Compute, Valgrind
 
 Risk-neutral GBM dynamics:
 
-<img src="docs/equations/gbm_card.png" alt="GBM equation" width="620" />
+<img src="docs/equations/gbm_card_v3.png" alt="GBM equation" width="620" />
 
 European call payoff:
 
-<img src="docs/equations/payoff_card.png" alt="Payoff equation" width="620" />
+<img src="docs/equations/payoff_card_v3.png" alt="Payoff equation" width="620" />
 
 Control variate estimator:
 
-<img src="docs/equations/cv1_card.png" alt="Control variate equation" width="620" />
-<img src="docs/equations/cv2_card.png" alt="Control variate beta equation" width="620" />
+<img src="docs/equations/cv1_card_v3.png" alt="Control variate equation" width="620" />
+<img src="docs/equations/cv2_card_v3.png" alt="Control variate beta equation" width="620" />
 
 Pathwise Greeks (European):
 
-<img src="docs/equations/delta_card.png" alt="Delta equation" width="620" />
-<img src="docs/equations/vega_card.png" alt="Vega equation" width="620" />
+<img src="docs/equations/delta_card_v3.png" alt="Delta equation" width="620" />
+<img src="docs/equations/vega_card_v3.png" alt="Vega equation" width="620" />
 
 ## Quickstart
 
