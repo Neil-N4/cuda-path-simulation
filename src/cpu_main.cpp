@@ -8,6 +8,7 @@
 #include <random>
 
 #include "argparse.hpp"
+#include "low_discrepancy.hpp"
 
 namespace {
 
@@ -102,7 +103,9 @@ SimResult run_cpu(const SimConfig& cfg) {
       float w_a = 0.0f;
 
       for (int step = 0; step < cfg.steps; ++step) {
-        const float z = normal(rng);
+        const float z = (cfg.rng_mode == RngMode::Sobol)
+                            ? lowdisc::sobol_normal(sample_count, step, cfg.seed)
+                            : normal(rng);
         w_a += z * sqrt_dt;
         st_a = st_a * std::exp(drift + vol_step * z);
         st_b = st_b * std::exp(drift - vol_step * z);
@@ -145,7 +148,9 @@ SimResult run_cpu(const SimConfig& cfg) {
       float w = 0.0f;
 
       for (int step = 0; step < cfg.steps; ++step) {
-        const float z = normal(rng);
+        const float z = (cfg.rng_mode == RngMode::Sobol)
+                            ? lowdisc::sobol_normal(sample_count, step, cfg.seed)
+                            : normal(rng);
         w += z * sqrt_dt;
         st = st * std::exp(drift + vol_step * z);
         mean_acc += st;
@@ -238,6 +243,8 @@ int main(int argc, char** argv) {
   std::cout << "samples=" << result.sample_count << "\n";
   std::cout << "antithetic=" << (cfg.antithetic ? 1 : 0) << "\n";
   std::cout << "control_variate=" << (cfg.control_variate ? 1 : 0) << "\n";
+  std::cout << "rng_mode=" << (cfg.rng_mode == RngMode::Sobol ? "sobol" : "philox") << "\n";
+  std::cout << "math_mode=" << (cfg.math_mode == MathMode::Mixed ? "mixed" : "fp32") << "\n";
   std::cout << "payoff=" << static_cast<int>(cfg.payoff) << "\n";
   std::cout << "steps=" << cfg.steps << "\n";
   std::cout << "price=" << result.option_price << "\n";

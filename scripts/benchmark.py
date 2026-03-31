@@ -12,7 +12,7 @@ def parse_kv(stdout: str) -> dict[str, float | str]:
         if "=" not in line:
             continue
         k, v = line.strip().split("=", 1)
-        if k in {"engine"}:
+        if k in {"engine", "rng_mode", "math_mode"}:
             out[k] = v
         else:
             out[k] = float(v)
@@ -47,6 +47,8 @@ def main() -> None:
         action="store_true",
         help="Enable control variate estimator in both CPU and GPU engines",
     )
+    parser.add_argument("--rng", choices=["philox", "sobol"], default="philox")
+    parser.add_argument("--math", choices=["fp32", "mixed"], default="fp32")
     parser.add_argument("--out", default=Path("results/benchmark_results.csv"), type=Path)
     args = parser.parse_args()
 
@@ -58,6 +60,8 @@ def main() -> None:
         "--steps", str(args.steps),
         "--payoff", args.payoff,
         "--barrier", str(args.barrier),
+        "--rng", args.rng,
+        "--math", args.math,
     ]
     if args.antithetic:
         common.append("--antithetic")
@@ -107,6 +111,8 @@ def main() -> None:
           "price_abs_diff": price_diff,
           "antithetic": 1 if args.antithetic else 0,
           "control_variate": 1 if args.control_variate else 0,
+          "rng_mode": str(gpu["rng_mode"]),
+          "math_mode": str(gpu["math_mode"]),
       }
       rows.append(row)
       print(json.dumps(row, indent=2))

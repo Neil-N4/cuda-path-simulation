@@ -13,7 +13,7 @@ def parse_kv(stdout: str) -> dict[str, float | str]:
         if "=" not in line:
             continue
         k, v = line.split("=", 1)
-        out[k] = v if k == "engine" else float(v)
+        out[k] = v if k in {"engine", "rng_mode", "math_mode"} else float(v)
     return out
 
 
@@ -30,6 +30,8 @@ def run_variant(
     barrier: float,
     antithetic: bool,
     control_variate: bool,
+    rng: str,
+    math: str,
 ) -> list[dict[str, float]]:
     rows: list[dict[str, float]] = []
     for paths in paths_grid:
@@ -38,6 +40,8 @@ def run_variant(
             "--steps", str(steps),
             "--payoff", payoff,
             "--barrier", str(barrier),
+            "--rng", rng,
+            "--math", math,
         ]
         if antithetic:
             args.append("--antithetic")
@@ -98,6 +102,8 @@ def main() -> None:
     parser.add_argument("--steps", type=int, default=365)
     parser.add_argument("--payoff", choices=["european", "asian", "upout"], default="european")
     parser.add_argument("--barrier", type=float, default=130.0)
+    parser.add_argument("--rng", choices=["philox", "sobol"], default="philox")
+    parser.add_argument("--math", choices=["fp32", "mixed"], default="fp32")
     parser.add_argument(
         "--paths-grid",
         type=str,
@@ -120,7 +126,15 @@ def main() -> None:
     }
     series = {
         name: run_variant(
-            bin_path, paths_grid, args.steps, args.payoff, args.barrier, antithetic, control_variate
+            bin_path,
+            paths_grid,
+            args.steps,
+            args.payoff,
+            args.barrier,
+            antithetic,
+            control_variate,
+            args.rng,
+            args.math,
         )
         for name, (antithetic, control_variate) in variants.items()
     }

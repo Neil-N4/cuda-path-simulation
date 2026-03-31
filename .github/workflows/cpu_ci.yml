@@ -24,6 +24,7 @@ jobs:
       - name: CPU smoke run
         run: |
           ./build/mc_cpu --paths 200000 --steps 365 --payoff european --antithetic --control-variate
+          ./build/mc_cpu --paths 200000 --steps 365 --payoff european --antithetic --control-variate --rng sobol --math mixed
 
       - name: Python script syntax
         run: |

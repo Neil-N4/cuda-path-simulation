@@ -11,7 +11,7 @@ def parse_kv(stdout: str) -> dict[str, float | str]:
         if "=" not in line:
             continue
         k, v = line.split("=", 1)
-        out[k] = v if k == "engine" else float(v)
+        out[k] = v if k in {"engine", "rng_mode", "math_mode"} else float(v)
     return out
 
 
@@ -32,6 +32,8 @@ def main() -> None:
     parser.add_argument("--build-dir", type=Path, default=Path("build"))
     parser.add_argument("--paths", type=int, default=1_000_000)
     parser.add_argument("--steps", type=int, default=365)
+    parser.add_argument("--rng", choices=["philox", "sobol"], default="philox")
+    parser.add_argument("--math", choices=["fp32", "mixed"], default="fp32")
     args = parser.parse_args()
 
     cpu = args.build_dir / "mc_cpu"
@@ -51,6 +53,8 @@ def main() -> None:
             "--steps", str(args.steps),
             "--antithetic",
             "--control-variate",
+            "--rng", args.rng,
+            "--math", args.math,
             *extra,
         ]
         out_cpu = run(cpu, common)

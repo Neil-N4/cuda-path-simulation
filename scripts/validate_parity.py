@@ -10,7 +10,7 @@ def parse_kv(stdout: str) -> dict[str, float | str]:
         if "=" not in line:
             continue
         k, v = line.strip().split("=", 1)
-        out[k] = v if k == "engine" else float(v)
+        out[k] = v if k in {"engine", "rng_mode", "math_mode"} else float(v)
     return out
 
 
@@ -30,6 +30,8 @@ def main() -> None:
     parser.add_argument("--require-ci-overlap", action="store_true")
     parser.add_argument("--antithetic", action="store_true")
     parser.add_argument("--control-variate", action="store_true")
+    parser.add_argument("--rng", choices=["philox", "sobol"], default="philox")
+    parser.add_argument("--math", choices=["fp32", "mixed"], default="fp32")
     args = parser.parse_args()
 
     common = [
@@ -41,6 +43,10 @@ def main() -> None:
         args.payoff,
         "--barrier",
         str(args.barrier),
+        "--rng",
+        args.rng,
+        "--math",
+        args.math,
     ]
     if args.antithetic:
         common.append("--antithetic")

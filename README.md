@@ -10,7 +10,9 @@ C++20, CUDA, Python, CMake, Nsight Systems, Nsight Compute, Valgrind
 
 - Native CPU (`mc_cpu`) and CUDA (`mc_gpu`) pricing engines
 - On-device random generation with `curand` and vectorized normal draws (`curand_normal4`)
-- CUDA shared-memory block reductions, coalesced global writes, and stream-overlapped async copies
+- Optional low-discrepancy path mode (`--rng sobol`) for quasi-Monte Carlo style sampling
+- Optional mixed-precision path propagation (`--math mixed`) with FP64 accumulators
+- CUDA warp-shuffle reductions, coalesced global writes, and stream-overlapped async copies
 - Pricing models:
   - `european` call
   - `asian` arithmetic-average call
@@ -68,7 +70,11 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=75
 cmake --build build -j
 
 ./build/mc_gpu --paths 10000000 --steps 365 --payoff european --antithetic --control-variate
+./build/mc_gpu --paths 10000000 --steps 365 --payoff european --antithetic --control-variate --rng sobol
+./build/mc_gpu --paths 10000000 --steps 365 --payoff european --antithetic --control-variate --math mixed
 ```
+
+`--rng sobol` and `--math mixed` are implemented for the CUDA engine; the CPU binary accepts the same flags so parity and benchmarking scripts can share one CLI shape.
 
 ## Validation Workflow
 
@@ -84,6 +90,9 @@ python3 scripts/convergence_report.py --build-dir build --engine gpu --steps 365
 
 # Stress scenarios
 python3 scripts/stress_suite.py --build-dir build
+
+# RNG/math mode sweep
+python3 scripts/mode_sweep.py --build-dir build --paths 2000000 --steps 365 --payoff european --antithetic --control-variate
 
 # Perf regression gate
 python3 scripts/perf_gate.py --benchmark-csv results/benchmark_results.csv --convergence-csv results/convergence/gpu_convergence.csv --thresholds configs/perf_gate_thresholds.json
@@ -109,6 +118,7 @@ Generated in `results/`:
 - `convergence/gpu_convergence.csv`
 - `convergence/convergence_error.png`
 - `convergence/convergence_ci_width.png`
+- `modes/mode_sweep.csv`
 - `ncu_profile.ncu-rep` / `ncu_metrics_*.csv` (profiling runs)
 
 ## Latest Verification Snapshot

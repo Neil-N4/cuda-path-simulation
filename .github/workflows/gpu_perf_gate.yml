@@ -34,6 +34,16 @@ jobs:
             --steps 365 \
             --payoff european
 
+      - name: Mode sweep
+        run: |
+          python3 scripts/mode_sweep.py \
+            --build-dir build \
+            --paths 2000000 \
+            --steps 365 \
+            --payoff european \
+            --antithetic \
+            --control-variate
+
       - name: Perf regression gate
         run: |
           python3 scripts/perf_gate.py \
@@ -51,3 +61,4 @@ jobs:
             results/convergence/gpu_convergence.csv
             results/convergence/convergence_error.png
             results/convergence/convergence_ci_width.png
+            results/modes/mode_sweep.csv

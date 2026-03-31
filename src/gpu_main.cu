@@ -8,10 +8,12 @@
 #include <limits>
 #include <vector>
 
+#include <cuda_fp16.h>
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
 
 #include "argparse.hpp"
+#include "low_discrepancy.hpp"
 
 namespace {
 
@@ -28,6 +30,7 @@ namespace {
 constexpr int kThreadsPerBlock = 256;
 constexpr int kStreams = 4;
 constexpr double kZ95 = 1.959963984540054;
+constexpr int kWarpSize = 32;
 
 double normal_cdf(double x) {
   return 0.5 * std::erfc(-x / std::sqrt(2.0));
@@ -109,16 +112,48 @@ __global__ void init_states(curandStatePhilox4_32_10_t* states,
   }
 }
 
+__inline__ __device__ double warp_reduce_sum(double v) {
+  for (int offset = kWarpSize / 2; offset > 0; offset >>= 1) {
+    v += __shfl_down_sync(0xffffffffu, v, offset);
+  }
+  return v;
+}
+
+__device__ float next_normal(curandStatePhilox4_32_10_t* state,
+                             RngMode rng_mode,
+                             std::uint64_t sample_idx,
+                             int step,
+                             std::uint64_t seed,
+                             float4* cache,
+                             int* cache_pos) {
+  if (rng_mode == RngMode::Sobol) {
+    return lowdisc::sobol_normal(sample_idx, step, seed);
+  }
+
+  if (*cache_pos >= 4) {
+    *cache = curand_normal4(state);
+    *cache_pos = 0;
+  }
+  float z = 0.0f;
+  if (*cache_pos == 0) z = cache->x;
+  else if (*cache_pos == 1) z = cache->y;
+  else if (*cache_pos == 2) z = cache->z;
+  else z = cache->w;
+  *cache_pos += 1;
+  return z;
+}
+
 __global__ void simulate_kernel(
     const curandStatePhilox4_32_10_t* states_in,
     curandStatePhilox4_32_10_t* states_out,
-    float* block_y,
-    float* block_y2,
-    float* block_x,
-    float* block_x2,
-    float* block_yx,
-    float* block_delta,
-    float* block_vega,
+    double* block_y,
+    double* block_y2,
+    double* block_x,
+    double* block_x2,
+    double* block_yx,
+    double* block_delta,
+    double* block_vega,
+    std::uint64_t sample_offset,
     std::uint64_t samples,
     int steps,
     float s0,
@@ -128,54 +163,68 @@ __global__ void simulate_kernel(
     float maturity,
     float barrier,
     int antithetic,
-    int payoff_type) {
-  extern __shared__ float sh[];
-  float* sh_y = sh;
-  float* sh_y2 = sh + blockDim.x;
-  float* sh_x = sh + 2 * blockDim.x;
-  float* sh_x2 = sh + 3 * blockDim.x;
-  float* sh_yx = sh + 4 * blockDim.x;
-  float* sh_delta = sh + 5 * blockDim.x;
-  float* sh_vega = sh + 6 * blockDim.x;
+    int payoff_type,
+    int rng_mode,
+    int math_mode,
+    std::uint64_t seed) {
+  __shared__ double warp_y[kThreadsPerBlock / kWarpSize];
+  __shared__ double warp_y2[kThreadsPerBlock / kWarpSize];
+  __shared__ double warp_x[kThreadsPerBlock / kWarpSize];
+  __shared__ double warp_x2[kThreadsPerBlock / kWarpSize];
+  __shared__ double warp_yx[kThreadsPerBlock / kWarpSize];
+  __shared__ double warp_delta[kThreadsPerBlock / kWarpSize];
+  __shared__ double warp_vega[kThreadsPerBlock / kWarpSize];
 
   const std::uint64_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-  float y = 0.0f, x = 0.0f, delta = 0.0f, vega = 0.0f;
+  double y = 0.0, x = 0.0, delta = 0.0, vega = 0.0;
 
   if (idx < samples) {
-    curandStatePhilox4_32_10_t state = states_in[idx];
+    curandStatePhilox4_32_10_t state{};
+    if (rng_mode == static_cast<int>(RngMode::Philox)) {
+      state = states_in[idx];
+    }
     const float dt = maturity / static_cast<float>(steps);
     const float sqrt_dt = sqrtf(dt);
     const float drift = (rate - 0.5f * vol * vol) * dt;
     const float vol_step = vol * sqrt_dt;
     const float discount = expf(-rate * maturity);
     const int greek_enabled = (payoff_type == static_cast<int>(PayoffType::EuropeanCall));
+    float4 z_cache{0.0f, 0.0f, 0.0f, 0.0f};
+    int z_cache_pos = 4;
 
     float st_a = s0, st_b = s0;
-    float mean_acc_a = 0.0f, mean_acc_b = 0.0f;
+    __half h_st_a = __float2half(s0);
+    __half h_st_b = __float2half(s0);
+    double mean_acc_a = 0.0, mean_acc_b = 0.0;
     int knock_a = 0, knock_b = 0;
     float w_a = 0.0f;
 
-    int step = 0;
-    for (; step + 4 <= steps; step += 4) {
-      const float4 z4 = curand_normal4(&state);
-      const float zvals[4] = {z4.x, z4.y, z4.z, z4.w};
-      #pragma unroll
-      for (int k = 0; k < 4; ++k) {
-        const float z = zvals[k];
-        w_a += z * sqrt_dt;
+    for (int step = 0; step < steps; ++step) {
+      const std::uint64_t sample_idx = sample_offset + idx;
+      const float z = next_normal(
+          &state,
+          static_cast<RngMode>(rng_mode),
+          sample_idx,
+          step,
+          seed,
+          &z_cache,
+          &z_cache_pos);
+      w_a += z * sqrt_dt;
+
+      if (math_mode == static_cast<int>(MathMode::Mixed)) {
+        st_a = __half2float(h_st_a) * __expf(drift + vol_step * z);
+        h_st_a = __float2half_rn(st_a);
+        st_a = __half2float(h_st_a);
+        if (antithetic) {
+          st_b = __half2float(h_st_b) * __expf(drift - vol_step * z);
+          h_st_b = __float2half_rn(st_b);
+          st_b = __half2float(h_st_b);
+        }
+      } else {
         st_a = st_a * __expf(drift + vol_step * z);
         if (antithetic) st_b = st_b * __expf(drift - vol_step * z);
-        mean_acc_a += st_a;
-        if (antithetic) mean_acc_b += st_b;
-        knock_a = knock_a || (st_a >= barrier);
-        if (antithetic) knock_b = knock_b || (st_b >= barrier);
       }
-    }
-    for (; step < steps; ++step) {
-      const float z = curand_normal(&state);
-      w_a += z * sqrt_dt;
-      st_a = st_a * __expf(drift + vol_step * z);
-      if (antithetic) st_b = st_b * __expf(drift - vol_step * z);
+
       mean_acc_a += st_a;
       if (antithetic) mean_acc_b += st_b;
       knock_a = knock_a || (st_a >= barrier);
@@ -188,8 +237,8 @@ __global__ void simulate_kernel(
     if (antithetic) {
       const float mean_path_b = mean_acc_b / steps;
       const float payoff_b = payoff_value_device(payoff_type, st_b, mean_path_b, knock_b, strike);
-      y = 0.5f * discount * (payoff_a + payoff_b);
-      x = 0.5f * discount * (st_a + st_b);
+      y = 0.5 * discount * (payoff_a + payoff_b);
+      x = 0.5 * discount * (st_a + st_b);
       if (greek_enabled) {
         const float ind_a = (st_a > strike) ? 1.0f : 0.0f;
         const float ind_b = (st_b > strike) ? 1.0f : 0.0f;
@@ -197,8 +246,8 @@ __global__ void simulate_kernel(
         const float d_b = discount * ind_b * st_b / s0;
         const float v_a = discount * ind_a * st_a * (w_a - vol * maturity);
         const float v_b = discount * ind_b * st_b * (-w_a - vol * maturity);
-        delta = 0.5f * (d_a + d_b);
-        vega = 0.5f * (v_a + v_b);
+        delta = 0.5 * (d_a + d_b);
+        vega = 0.5 * (v_a + v_b);
       }
     } else {
       y = discount * payoff_a;
@@ -209,39 +258,63 @@ __global__ void simulate_kernel(
         vega = discount * ind * st_a * (w_a - vol * maturity);
       }
     }
-    states_out[idx] = state;
+    if (rng_mode == static_cast<int>(RngMode::Philox)) {
+      states_out[idx] = state;
+    }
   }
 
-  sh_y[threadIdx.x] = y;
-  sh_y2[threadIdx.x] = y * y;
-  sh_x[threadIdx.x] = x;
-  sh_x2[threadIdx.x] = x * x;
-  sh_yx[threadIdx.x] = y * x;
-  sh_delta[threadIdx.x] = delta;
-  sh_vega[threadIdx.x] = vega;
+  const int lane = threadIdx.x & (kWarpSize - 1);
+  const int warp = threadIdx.x / kWarpSize;
+  const double y_local = y;
+  const double x_local = x;
+  const double delta_local = delta;
+  const double vega_local = vega;
+  y = warp_reduce_sum(y_local);
+  const double y2 = warp_reduce_sum(y_local * y_local);
+  x = warp_reduce_sum(x_local);
+  const double x2 = warp_reduce_sum(x_local * x_local);
+  const double yx = warp_reduce_sum(y_local * x_local);
+  delta = warp_reduce_sum(delta_local);
+  vega = warp_reduce_sum(vega_local);
+
+  if (lane == 0) {
+    warp_y[warp] = y;
+    warp_y2[warp] = y2;
+    warp_x[warp] = x;
+    warp_x2[warp] = x2;
+    warp_yx[warp] = yx;
+    warp_delta[warp] = delta;
+    warp_vega[warp] = vega;
+  }
   __syncthreads();
 
-  for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
-    if (threadIdx.x < stride) {
-      sh_y[threadIdx.x] += sh_y[threadIdx.x + stride];
-      sh_y2[threadIdx.x] += sh_y2[threadIdx.x + stride];
-      sh_x[threadIdx.x] += sh_x[threadIdx.x + stride];
-      sh_x2[threadIdx.x] += sh_x2[threadIdx.x + stride];
-      sh_yx[threadIdx.x] += sh_yx[threadIdx.x + stride];
-      sh_delta[threadIdx.x] += sh_delta[threadIdx.x + stride];
-      sh_vega[threadIdx.x] += sh_vega[threadIdx.x + stride];
-    }
-    __syncthreads();
-  }
+  if (warp == 0) {
+    const int warp_count = kThreadsPerBlock / kWarpSize;
+    double by = (lane < warp_count) ? warp_y[lane] : 0.0;
+    double by2 = (lane < warp_count) ? warp_y2[lane] : 0.0;
+    double bx = (lane < warp_count) ? warp_x[lane] : 0.0;
+    double bx2 = (lane < warp_count) ? warp_x2[lane] : 0.0;
+    double byx = (lane < warp_count) ? warp_yx[lane] : 0.0;
+    double bdelta = (lane < warp_count) ? warp_delta[lane] : 0.0;
+    double bvega = (lane < warp_count) ? warp_vega[lane] : 0.0;
 
-  if (threadIdx.x == 0) {
-    block_y[blockIdx.x] = sh_y[0];
-    block_y2[blockIdx.x] = sh_y2[0];
-    block_x[blockIdx.x] = sh_x[0];
-    block_x2[blockIdx.x] = sh_x2[0];
-    block_yx[blockIdx.x] = sh_yx[0];
-    block_delta[blockIdx.x] = sh_delta[0];
-    block_vega[blockIdx.x] = sh_vega[0];
+    by = warp_reduce_sum(by);
+    by2 = warp_reduce_sum(by2);
+    bx = warp_reduce_sum(bx);
+    bx2 = warp_reduce_sum(bx2);
+    byx = warp_reduce_sum(byx);
+    bdelta = warp_reduce_sum(bdelta);
+    bvega = warp_reduce_sum(bvega);
+
+    if (lane == 0) {
+      block_y[blockIdx.x] = by;
+      block_y2[blockIdx.x] = by2;
+      block_x[blockIdx.x] = bx;
+      block_x2[blockIdx.x] = bx2;
+      block_yx[blockIdx.x] = byx;
+      block_delta[blockIdx.x] = bdelta;
+      block_vega[blockIdx.x] = bvega;
+    }
   }
 }
 
@@ -250,28 +323,28 @@ struct StreamBuffers {
   std::uint64_t blocks = 0;
   curandStatePhilox4_32_10_t* d_state_a = nullptr;
   curandStatePhilox4_32_10_t* d_state_b = nullptr;
-  float* d_y = nullptr;
-  float* d_y2 = nullptr;
-  float* d_x = nullptr;
-  float* d_x2 = nullptr;
-  float* d_yx = nullptr;
-  float* d_delta = nullptr;
-  float* d_vega = nullptr;
-  float* h_y = nullptr;
-  float* h_y2 = nullptr;
-  float* h_x = nullptr;
-  float* h_x2 = nullptr;
-  float* h_yx = nullptr;
-  float* h_delta = nullptr;
-  float* h_vega = nullptr;
+  double* d_y = nullptr;
+  double* d_y2 = nullptr;
+  double* d_x = nullptr;
+  double* d_x2 = nullptr;
+  double* d_yx = nullptr;
+  double* d_delta = nullptr;
+  double* d_vega = nullptr;
+  double* h_y = nullptr;
+  double* h_y2 = nullptr;
+  double* h_x = nullptr;
+  double* h_x2 = nullptr;
+  double* h_yx = nullptr;
+  double* h_delta = nullptr;
+  double* h_vega = nullptr;
 };
 
-void alloc_metric_pair(float*& d, float*& h, std::uint64_t blocks) {
-  CUDA_CHECK(cudaMalloc(&d, blocks * sizeof(float)));
-  CUDA_CHECK(cudaMallocHost(&h, blocks * sizeof(float)));
+void alloc_metric_pair(double*& d, double*& h, std::uint64_t blocks) {
+  CUDA_CHECK(cudaMalloc(&d, blocks * sizeof(double)));
+  CUDA_CHECK(cudaMallocHost(&h, blocks * sizeof(double)));
 }
 
-void free_metric_pair(float*& d, float*& h) {
+void free_metric_pair(double*& d, double*& h) {
   if (d) CUDA_CHECK(cudaFree(d));
   if (h) CUDA_CHECK(cudaFreeHost(h));
 }
@@ -328,21 +401,24 @@ SimResult run_gpu(const SimConfig& cfg) {
     const std::uint64_t global_offset = static_cast<std::uint64_t>(s) * chunk_samples;
     const dim3 grid(static_cast<unsigned int>(b.blocks));
     const dim3 block(kThreadsPerBlock);
-    init_states<<<grid, block, 0, streams[s]>>>(b.d_state_a, b.chunk_samples, cfg.seed, global_offset);
+    if (cfg.rng_mode == RngMode::Philox) {
+      init_states<<<grid, block, 0, streams[s]>>>(b.d_state_a, b.chunk_samples, cfg.seed, global_offset);
+    }
 
-    const std::size_t shared_bytes = 7 * kThreadsPerBlock * sizeof(float);
-    simulate_kernel<<<grid, block, shared_bytes, streams[s]>>>(
+    simulate_kernel<<<grid, block, 0, streams[s]>>>(
         b.d_state_a, b.d_state_b, b.d_y, b.d_y2, b.d_x, b.d_x2, b.d_yx, b.d_delta, b.d_vega,
+        global_offset,
         b.chunk_samples, cfg.steps, cfg.s0, cfg.strike, cfg.rate, cfg.volatility, cfg.maturity,
-        cfg.barrier, cfg.antithetic ? 1 : 0, static_cast<int>(cfg.payoff));
+        cfg.barrier, cfg.antithetic ? 1 : 0, static_cast<int>(cfg.payoff),
+        static_cast<int>(cfg.rng_mode), static_cast<int>(cfg.math_mode), cfg.seed);
 
-    CUDA_CHECK(cudaMemcpyAsync(b.h_y, b.d_y, b.blocks * sizeof(float), cudaMemcpyDeviceToHost, streams[s]));
-    CUDA_CHECK(cudaMemcpyAsync(b.h_y2, b.d_y2, b.blocks * sizeof(float), cudaMemcpyDeviceToHost, streams[s]));
-    CUDA_CHECK(cudaMemcpyAsync(b.h_x, b.d_x, b.blocks * sizeof(float), cudaMemcpyDeviceToHost, streams[s]));
-    CUDA_CHECK(cudaMemcpyAsync(b.h_x2, b.d_x2, b.blocks * sizeof(float), cudaMemcpyDeviceToHost, streams[s]));
-    CUDA_CHECK(cudaMemcpyAsync(b.h_yx, b.d_yx, b.blocks * sizeof(float), cudaMemcpyDeviceToHost, streams[s]));
-    CUDA_CHECK(cudaMemcpyAsync(b.h_delta, b.d_delta, b.blocks * sizeof(float), cudaMemcpyDeviceToHost, streams[s]));
-    CUDA_CHECK(cudaMemcpyAsync(b.h_vega, b.d_vega, b.blocks * sizeof(float), cudaMemcpyDeviceToHost, streams[s]));
+    CUDA_CHECK(cudaMemcpyAsync(b.h_y, b.d_y, b.blocks * sizeof(double), cudaMemcpyDeviceToHost, streams[s]));
+    CUDA_CHECK(cudaMemcpyAsync(b.h_y2, b.d_y2, b.blocks * sizeof(double), cudaMemcpyDeviceToHost, streams[s]));
+    CUDA_CHECK(cudaMemcpyAsync(b.h_x, b.d_x, b.blocks * sizeof(double), cudaMemcpyDeviceToHost, streams[s]));
+    CUDA_CHECK(cudaMemcpyAsync(b.h_x2, b.d_x2, b.blocks * sizeof(double), cudaMemcpyDeviceToHost, streams[s]));
+    CUDA_CHECK(cudaMemcpyAsync(b.h_yx, b.d_yx, b.blocks * sizeof(double), cudaMemcpyDeviceToHost, streams[s]));
+    CUDA_CHECK(cudaMemcpyAsync(b.h_delta, b.d_delta, b.blocks * sizeof(double), cudaMemcpyDeviceToHost, streams[s]));
+    CUDA_CHECK(cudaMemcpyAsync(b.h_vega, b.d_vega, b.blocks * sizeof(double), cudaMemcpyDeviceToHost, streams[s]));
   }
 
   double sum_y = 0.0, sum_y2 = 0.0, sum_x = 0.0, sum_x2 = 0.0, sum_yx = 0.0;
@@ -438,6 +514,8 @@ int main(int argc, char** argv) {
   std::cout << "samples=" << result.sample_count << "\n";
   std::cout << "antithetic=" << (cfg.antithetic ? 1 : 0) << "\n";
   std::cout << "control_variate=" << (cfg.control_variate ? 1 : 0) << "\n";
+  std::cout << "rng_mode=" << (cfg.rng_mode == RngMode::Sobol ? "sobol" : "philox") << "\n";
+  std::cout << "math_mode=" << (cfg.math_mode == MathMode::Mixed ? "mixed" : "fp32") << "\n";
   std::cout << "payoff=" << static_cast<int>(cfg.payoff) << "\n";
   std::cout << "steps=" << cfg.steps << "\n";
   std::cout << "price=" << result.option_price << "\n";

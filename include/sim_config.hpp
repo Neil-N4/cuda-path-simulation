@@ -8,6 +8,16 @@ enum class PayoffType : int {
   UpAndOutCall = 2,
 };
 
+enum class RngMode : int {
+  Philox = 0,
+  Sobol = 1,
+};
+
+enum class MathMode : int {
+  FP32 = 0,
+  Mixed = 1,
+};
+
 struct SimConfig {
   std::uint64_t paths = 10000000;
   int steps = 365;
@@ -21,6 +31,8 @@ struct SimConfig {
   bool antithetic = false;
   bool control_variate = false;
   PayoffType payoff = PayoffType::EuropeanCall;
+  RngMode rng_mode = RngMode::Philox;
+  MathMode math_mode = MathMode::FP32;
 };
 
 struct SimResult {

@@ -22,12 +22,38 @@ inline bool parse_payoff(const std::string& s, PayoffType& payoff) {
   return false;
 }
 
+inline bool parse_rng_mode(const std::string& s, RngMode& mode) {
+  if (s == "philox") {
+    mode = RngMode::Philox;
+    return true;
+  }
+  if (s == "sobol") {
+    mode = RngMode::Sobol;
+    return true;
+  }
+  return false;
+}
+
+inline bool parse_math_mode(const std::string& s, MathMode& mode) {
+  if (s == "fp32") {
+    mode = MathMode::FP32;
+    return true;
+  }
+  if (s == "mixed") {
+    mode = MathMode::Mixed;
+    return true;
+  }
+  return false;
+}
+
 inline void print_usage(const char* bin) {
   std::cerr
       << "Usage: " << bin
       << " [--paths N] [--steps N] [--s0 X] [--strike X] [--rate X]"
       << " [--vol X] [--maturity X] [--barrier X] [--seed N]"
       << " [--payoff european|asian|upout]"
+      << " [--rng philox|sobol]"
+      << " [--math fp32|mixed]"
       << " [--antithetic|--no-antithetic]"
       << " [--control-variate|--no-control-variate]" << std::endl;
 }
@@ -68,6 +94,16 @@ inline bool parse_args(int argc, char** argv, SimConfig& cfg) {
       else if (arg == "--seed") cfg.seed = std::stoull(value);
       else if (arg == "--payoff") {
         if (!parse_payoff(value, cfg.payoff)) {
+          print_usage(argv[0]);
+          return false;
+        }
+      } else if (arg == "--rng") {
+        if (!parse_rng_mode(value, cfg.rng_mode)) {
+          print_usage(argv[0]);
+          return false;
+        }
+      } else if (arg == "--math") {
+        if (!parse_math_mode(value, cfg.math_mode)) {
           print_usage(argv[0]);
           return false;
         }
