@@ -127,16 +127,20 @@ Generated in `results/`:
 Reference hardware: Google Colab `NVIDIA Tesla T4`, CUDA 12.8  
 Reference workload: `10,000,000` paths, `365` steps, `european`, `--antithetic --control-variate`
 
-- CPU runtime (avg, 3 runs): `67850.168 ms`
-- GPU runtime (avg, 3 runs): `37.650 ms`
-- Avg speedup: `1852.66x`
-- CPU/GPU CV price diff (parity run): `0.002882` (`CI overlap=1`)
+- CPU runtime (avg, 3 runs): `67669.117 ms`
+- GPU runtime (avg, 3 runs): `43.663 ms`
+- Avg speedup: `1588.91x`
+- CPU/GPU CV price diff (parity run): `0.001026` (`CI overlap=1`)
 - CI-width reduction factors:
   - antithetic: `1.342x`
   - control variate: `2.434x`
   - antithetic+control: `4.854x`
 - Stress suite: `passed`
-- Perf gate: `passed`
+- Mode sweep (`2,000,000` paths, `365` steps, `european`, `--antithetic --control-variate`):
+  - baseline (`philox`, `fp32`): `27.878 ms`, `price_abs_diff=0.002890`, `CI overlap=1`
+  - sobol (`sobol`, `fp32`): `22.227 ms`, `1.25x` faster than baseline, `price_abs_diff=0.000472`, `CI overlap=1`
+  - mixed (`philox`, `mixed`): `26.973 ms`, `price_abs_diff=0.000710`, `CI overlap=1`
+  - `sobol + mixed`: `unsupported`
 
 ## Repository Structure
 

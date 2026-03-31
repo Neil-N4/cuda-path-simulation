@@ -18,14 +18,14 @@ Build a high-throughput Monte Carlo pricing system that is both fast and numeric
 
 ## Performance Results
 
-- CPU runtime (avg, 3 runs): **67,850.168 ms**
-- GPU runtime (avg, 3 runs): **37.650 ms**
-- Speedup (avg): **1852.66x**
+- CPU runtime (avg, 3 runs): **67,669.117 ms**
+- GPU runtime (avg, 3 runs): **43.663 ms**
+- Speedup (avg): **1588.91x**
 
 ## Numerical Validation
 
 - CPU/GPU CV estimator parity:
-  - `abs_diff = 0.002882`
+  - `abs_diff = 0.001026`
   - CI overlap: **passed**
 - Black-Scholes consistency (European):
   - CPU abs error: `6.52e-4`
@@ -51,6 +51,19 @@ Scenarios validated:
 - European low rate
 - Asian payoff
 - Up-and-out barrier payoff
+
+Mode sweep status:
+
+- baseline (`philox`, `fp32`): **passed**
+- sobol (`sobol`, `fp32`): **passed**
+- mixed (`philox`, `mixed`): **passed**
+- sobol + mixed: **intentionally unsupported**
+
+Mode sweep metrics (`2,000,000` paths, 365 steps, European, antithetic + control variate):
+
+- baseline GPU runtime: `27.878 ms`
+- sobol GPU runtime: `22.227 ms` with `abs_diff = 0.000472`
+- mixed GPU runtime: `26.973 ms` with `abs_diff = 0.000710`
 
 ## Regression Protection
 
