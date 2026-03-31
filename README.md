@@ -75,6 +75,7 @@ cmake --build build -j
 ```
 
 `--rng sobol` and `--math mixed` are implemented for the CUDA engine; the CPU binary accepts the same flags so parity and benchmarking scripts can share one CLI shape.
+The `--rng sobol --math mixed` combination is intentionally disabled until the low-discrepancy + mixed-precision interaction is numerically revalidated.
 
 ## Validation Workflow
 

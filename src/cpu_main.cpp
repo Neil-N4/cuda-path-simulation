@@ -234,6 +234,11 @@ SimResult run_cpu(const SimConfig& cfg) {
 int main(int argc, char** argv) {
   SimConfig cfg;
   if (!parse_args(argc, argv, cfg)) return 1;
+  if (cfg.rng_mode == RngMode::Sobol && cfg.math_mode == MathMode::Mixed) {
+    std::cerr << "unsupported mode: --rng sobol cannot be combined with --math mixed"
+              << std::endl;
+    return 2;
+  }
   const SimResult result = run_cpu(cfg);
 
   std::cout << std::fixed << std::setprecision(6);

@@ -59,6 +59,27 @@ def main() -> None:
 
     rows: list[dict[str, float | str]] = []
     for name, rng, math in modes:
+        if rng == "sobol" and math == "mixed":
+            row = {
+                "mode": name,
+                "rng_mode": rng,
+                "math_mode": math,
+                "status": "unsupported",
+                "cpu_ms": "",
+                "gpu_ms": "",
+                "speedup": "",
+                "cpu_price": "",
+                "gpu_price": "",
+                "price_abs_diff": "",
+                "cpu_ci95_low": "",
+                "cpu_ci95_high": "",
+                "gpu_ci95_low": "",
+                "gpu_ci95_high": "",
+                "ci_overlap": "",
+            }
+            rows.append(row)
+            print(json.dumps(row, indent=2))
+            continue
         mode_args = [*base_args, "--rng", rng, "--math", math]
         cpu = run_binary(cpu_bin, mode_args)
         gpu = run_binary(gpu_bin, mode_args)
@@ -76,6 +97,7 @@ def main() -> None:
             "mode": name,
             "rng_mode": rng,
             "math_mode": math,
+            "status": "ok",
             "cpu_ms": float(cpu["runtime_ms"]),
             "gpu_ms": float(gpu["runtime_ms"]),
             "speedup": float(cpu["runtime_ms"]) / float(gpu["runtime_ms"]),
@@ -99,6 +121,9 @@ def main() -> None:
 
     print("\nSummary")
     for row in rows:
+        if row["status"] != "ok":
+            print(f"{row['mode']}: status={row['status']}")
+            continue
         print(
             f"{row['mode']}: "
             f"gpu_ms={float(row['gpu_ms']):.3f} "

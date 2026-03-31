@@ -504,6 +504,11 @@ SimResult run_gpu(const SimConfig& cfg) {
 int main(int argc, char** argv) {
   SimConfig cfg;
   if (!parse_args(argc, argv, cfg)) return 1;
+  if (cfg.rng_mode == RngMode::Sobol && cfg.math_mode == MathMode::Mixed) {
+    std::cerr << "unsupported mode: --rng sobol cannot be combined with --math mixed"
+              << std::endl;
+    return 2;
+  }
   CUDA_CHECK(cudaSetDevice(0));
   const SimResult result = run_gpu(cfg);
 
